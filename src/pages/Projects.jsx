@@ -9,7 +9,7 @@ const EMPTY = { client_id: '', title: '', description: '', budget: '' }
 
 export default function Projects() {
   const projects = useApi('/projects')
-  const clients = useApi('/clients')
+  const people = useApi('/people')
   const [form, setForm] = useState(EMPTY)
   const [links, setLinks] = useState([])
   const [formError, setFormError] = useState('')
@@ -46,8 +46,8 @@ export default function Projects() {
         <Field label="Client">
           <select className={inputClass} required value={form.client_id} onChange={set('client_id')}>
             <option value="">Select a client…</option>
-            {clients.data?.map((c) => (
-              <option key={c.id} value={c.id}>{c.full_name}</option>
+            {people.data?.map((c) => (
+              <option key={c.id} value={c.id}>{c.full_name}{c.role === 'owner' ? ' (owner)' : ''}</option>
             ))}
           </select>
         </Field>
