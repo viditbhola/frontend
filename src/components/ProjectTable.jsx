@@ -22,6 +22,11 @@ export default function ProjectTable({ projects, showClient }) {
                   {p.pending_count} awaiting confirmation
                 </span>
               )}
+              {p.has_open_delete_request && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800">
+                  deletion requested
+                </span>
+              )}
               {p.has_open_budget_request && (
                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-800">
                   budget request open

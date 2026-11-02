@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { api } from '../lib/api'
 import { dateLabel, money } from '../lib/format'
@@ -11,6 +11,7 @@ const today = () => new Date().toISOString().slice(0, 10)
 
 export default function ProjectDetail() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { profile } = useAuth()
   const { data, error, loading, reload } = useApi(`/projects/${id}`)
   const [actionError, setActionError] = useState('')
@@ -19,10 +20,11 @@ export default function ProjectDetail() {
   if (loading) return <p className="text-slate-500">Loading…</p>
   if (error) return <ErrorText>{error}</ErrorText>
 
-  const { project, payments, budget_requests: requests, payment_changes: changes } = data
+  const { project, payments, budget_requests: requests, payment_changes: changes, delete_requests: deletions } = data
   const isPayee = project.my_side === 'payee' // gets paid; otherwise this account pays
   const completed = project.status === 'completed'
   const openRequest = requests.find((r) => r.status === 'pending')
+  const openDeletion = deletions.find((d) => d.status === 'pending')
   const openChangeFor = (paymentId) =>
     changes.find((c) => c.payment_id === paymentId && c.status === 'pending')
   const otherParty = isPayee ? project.client_name : project.owner_name
@@ -34,6 +36,17 @@ export default function ProjectDetail() {
       await action()
       setModal(null)
       await reload()
+    } catch (err) {
+      setActionError(err.message)
+    }
+  }
+
+  // Once approved the project no longer exists for either side, so leave the page.
+  async function approveDeletion(request) {
+    setActionError('')
+    try {
+      await api(`/project-delete-requests/${request.id}/approve`, { method: 'POST' })
+      navigate(isPayee ? '/projects' : '/')
     } catch (err) {
       setActionError(err.message)
     }
@@ -96,6 +109,28 @@ export default function ProjectDetail() {
               <Button variant="danger" onClick={() => run(() => api(`/budget-requests/${openRequest.id}/reject`, { method: 'POST' }))}>
                 Deny
               </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {openDeletion && (
+        <div className="space-y-2 rounded-xl border border-red-200 bg-red-50 p-4">
+          <p className="font-medium">
+            {openDeletion.requested_by === profile.id ? 'You asked' : `${otherParty} asked`} to delete this project
+          </p>
+          <p className="text-sm text-slate-600">Reason: {openDeletion.reason}</p>
+          {openDeletion.requested_by === profile.id ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">Waiting for {otherParty} to approve.</span>
+              <Button variant="ghost" onClick={() => post(`/project-delete-requests/${openDeletion.id}/cancel`)}>Cancel request</Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="danger" onClick={() => window.confirm('Delete this project for both of you?') && approveDeletion(openDeletion)}>
+                Approve deletion
+              </Button>
+              <Button variant="ghost" onClick={() => post(`/project-delete-requests/${openDeletion.id}/reject`)}>Keep project</Button>
             </div>
           )}
         </div>
@@ -203,6 +238,22 @@ export default function ProjectDetail() {
         </section>
       )}
 
+      {!openDeletion && (
+        <div className="border-t border-slate-200 pt-4">
+          <Button variant="ghost" onClick={() => setModal({ type: 'delete-project' })}>Request to delete project</Button>
+          <p className="mt-1 text-xs text-slate-500">{otherParty} must approve before it is deleted.</p>
+        </div>
+      )}
+
+      {modal?.type === 'delete-project' && (
+        <ReasonModal
+          title="Request to delete this project"
+          note={`${otherParty} must approve. Open requests are cancelled and the project disappears for both of you; the records are kept.`}
+          submitLabel="Send request"
+          onClose={() => setModal(null)}
+          onSubmit={(reason) => run(() => api(`/projects/${project.id}/delete-requests`, { method: 'POST', body: { reason } }))}
+        />
+      )}
       {modal?.type === 'reject' && (
         <RejectModal onClose={() => setModal(null)} onSubmit={(reason) => run(() => api(`/payments/${modal.payment.id}/reject`, { method: 'POST', body: { reason } }))} />
       )}
