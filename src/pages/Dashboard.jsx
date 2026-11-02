@@ -115,7 +115,18 @@ export default function Dashboard() {
 
       {data.paying.length > 0 && (
         <section>
-          <h2 className="mb-2 font-semibold">Projects you pay for</h2>
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4">
+            <h2 className="font-semibold">Projects you pay for</h2>
+            {data.paying_totals && (
+              <span className="text-sm font-semibold text-amber-700">{money(data.paying_totals.to_pay)} left to pay</span>
+            )}
+          </div>
+          {data.paying_totals && (
+            <p className="mb-2 text-xs text-slate-500">
+              {money(data.paying_totals.paid)} of {money(data.paying_totals.budget)} paid
+              {Number(data.paying_totals.awaiting) > 0 && ` · ${money(data.paying_totals.awaiting)} waiting for confirmation`}
+            </p>
+          )}
           <ProjectTable projects={data.paying} showClient />
         </section>
       )}
