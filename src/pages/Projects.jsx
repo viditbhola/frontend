@@ -14,14 +14,22 @@ export default function Projects() {
   const [links, setLinks] = useState([])
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true)
     setFormError('')
+    setNotice('')
     try {
-      await api('/projects', { method: 'POST', body: { ...form, links: cleanLinks(links) } })
+      // Every project starts as a request; it exists only once the other side accepts.
+      const target = people.data?.find((c) => c.id === form.client_id)
+      await api('/proposals', {
+        method: 'POST',
+        body: { ...form, recipient_id: form.client_id, side: 'payee', links: cleanLinks(links) },
+      })
+      setNotice(`Request sent to ${target?.full_name ?? 'them'}. The project starts when they accept (see Requests).`)
       setForm(EMPTY)
       setLinks([])
       await projects.reload()
@@ -42,8 +50,8 @@ export default function Projects() {
       </section>
 
       <form onSubmit={submit} className="space-y-3 self-start rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="font-semibold">New project</h2>
-        <Field label="Client">
+        <h2 className="font-semibold">Request a new project</h2>
+        <Field label="Send to (they pay you)">
           <select className={inputClass} required value={form.client_id} onChange={set('client_id')}>
             <option value="">Select a client…</option>
             {people.data?.map((c) => (
@@ -62,7 +70,8 @@ export default function Projects() {
         </Field>
         <LinksEditor links={links} onChange={setLinks} />
         <ErrorText>{formError}</ErrorText>
-        <Button disabled={busy || !linksValid(links)}>{busy ? 'Creating…' : 'Create project'}</Button>
+        {notice && <p className="text-sm text-emerald-700">{notice}</p>}
+        <Button disabled={busy || !linksValid(links)}>{busy ? 'Sending…' : 'Send request'}</Button>
       </form>
     </div>
   )
