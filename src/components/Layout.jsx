@@ -17,6 +17,7 @@ export default function Layout() {
             <NavLink to="/" end className={link}>
               {isOwner ? 'Dashboard' : 'My projects'}
             </NavLink>
+            <NavLink to="/requests" className={link}>Requests</NavLink>
             {isOwner && (
               <>
                 <NavLink to="/projects" className={link}>Projects</NavLink>

@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import { api } from '../lib/api'
 import { dateLabel, money } from '../lib/format'
 import { useApi } from '../components/useApi'
+import { LinkList, LinksEditor, cleanLinks, linksValid } from '../components/Links'
 import { Button, Card, ErrorText, Field, Modal, ProgressBar, StatusBadge, inputClass } from '../components/ui'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -19,12 +20,12 @@ export default function ProjectDetail() {
   if (error) return <ErrorText>{error}</ErrorText>
 
   const { project, payments, budget_requests: requests, payment_changes: changes } = data
-  const isOwner = profile.role === 'owner'
+  const isPayee = project.my_side === 'payee' // gets paid; otherwise this account pays
   const completed = project.status === 'completed'
   const openRequest = requests.find((r) => r.status === 'pending')
   const openChangeFor = (paymentId) =>
     changes.find((c) => c.payment_id === paymentId && c.status === 'pending')
-  const otherParty = isOwner ? 'the client' : 'the owner'
+  const otherParty = isPayee ? project.client_name : project.owner_name
   const post = (path) => run(() => api(path, { method: 'POST' }))
 
   async function run(action) {
@@ -49,7 +50,7 @@ export default function ProjectDetail() {
 
   return (
     <div className="space-y-6">
-      <Link to={isOwner ? '/projects' : '/'} className="text-sm text-indigo-600">← Back</Link>
+      <Link to={isPayee ? '/projects' : '/'} className="text-sm text-indigo-600">← Back</Link>
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -57,9 +58,10 @@ export default function ProjectDetail() {
           <StatusBadge status={project.status} />
         </div>
         <p className="text-sm text-slate-600">
-          {isOwner ? `Client: ${project.client_name}` : 'Your project'}
+          {isPayee ? `Client: ${project.client_name}` : `You pay: ${project.owner_name}`}
           {project.description && ` · ${project.description}`}
         </p>
+        <LinkList links={project.links} />
         <ProgressBar confirmed={project.confirmed} pending={project.pending} budget={project.budget} />
       </div>
 
@@ -84,8 +86,8 @@ export default function ProjectDetail() {
             Budget increase requested: {money(openRequest.old_budget)} → {money(openRequest.new_budget)}
           </p>
           {openRequest.note && <p className="text-sm text-slate-600">{openRequest.note}</p>}
-          {isOwner ? (
-            <p className="text-sm text-slate-600">Waiting for the client to accept or deny.</p>
+          {isPayee ? (
+            <p className="text-sm text-slate-600">Waiting for {project.client_name} to accept or deny.</p>
           ) : (
             <div className="flex gap-2">
               <Button variant="success" onClick={() => run(() => api(`/budget-requests/${openRequest.id}/accept`, { method: 'POST' }))}>
@@ -99,11 +101,11 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {!completed && isOwner && !openRequest && (
+      {!completed && isPayee && !openRequest && (
         <Button variant="ghost" onClick={() => setModal({ type: 'budget' })}>Request budget increase</Button>
       )}
 
-      {!completed && !isOwner && <LogPaymentForm project={project} onDone={reload} />}
+      {!completed && !isPayee && <LogPaymentForm project={project} onDone={reload} />}
 
       <section>
         <h2 className="mb-2 font-semibold">Payments</h2>
@@ -126,8 +128,9 @@ export default function ProjectDetail() {
                 )}
               </div>
               {p.note && <p className="text-sm text-slate-600">{p.note}</p>}
+              <LinkList links={p.links} />
               {p.status === 'rejected' && <p className="text-sm text-red-700">Denied: {p.reject_reason}</p>}
-              {isOwner && p.status === 'pending' && (
+              {isPayee && p.status === 'pending' && (
                 <div className="flex gap-2 pt-1">
                   <Button variant="success" onClick={() => run(() => api(`/payments/${p.id}/confirm`, { method: 'POST' }))}>
                     Confirm received
@@ -136,7 +139,7 @@ export default function ProjectDetail() {
                 </div>
               )}
 
-              {!isOwner && p.status === 'pending' && (
+              {!isPayee && p.status === 'pending' && (
                 <div className="flex gap-2 pt-1">
                   <Button variant="ghost" onClick={() => setModal({ type: 'edit-pending', payment: p })}>Edit</Button>
                   <Button
@@ -208,6 +211,7 @@ export default function ProjectDetail() {
           title="Edit payment"
           payment={modal.payment}
           max={Number(project.loggable) + Number(modal.payment.amount)}
+          withLinks
           submitLabel="Save"
           onClose={() => setModal(null)}
           onSubmit={(form) => run(() => api(`/payments/${modal.payment.id}`, { method: 'PATCH', body: form }))}
@@ -252,6 +256,7 @@ export default function ProjectDetail() {
 function LogPaymentForm({ project, onDone }) {
   const empty = { amount: '', paid_on: today(), method: '', reference: '', note: '' }
   const [form, setForm] = useState(empty)
+  const [links, setLinks] = useState([])
   const [file, setFile] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -260,7 +265,7 @@ function LogPaymentForm({ project, onDone }) {
   if (Number(project.loggable) <= 0) {
     return (
       <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">
-        Payments are not open: everything is already logged. If the owner increases the budget and you accept, you can log more.
+        Payments are not open: everything is already logged. If the budget is increased and you accept, you can log more.
       </p>
     )
   }
@@ -270,13 +275,14 @@ function LogPaymentForm({ project, onDone }) {
     setBusy(true)
     setError('')
     try {
-      const payment = await api(`/projects/${project.id}/payments`, { method: 'POST', body: form })
+      const payment = await api(`/projects/${project.id}/payments`, { method: 'POST', body: { ...form, links: cleanLinks(links) } })
       if (file) {
         const upload = new FormData()
         upload.append('file', file)
         await api(`/payments/${payment.id}/proof`, { method: 'POST', form: upload })
       }
       setForm(empty)
+      setLinks([])
       setFile(null)
       e.target.reset()
       await onDone()
@@ -290,7 +296,7 @@ function LogPaymentForm({ project, onDone }) {
   return (
     <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
       <h2 className="font-semibold">Log a payment</h2>
-      <p className="text-xs text-slate-500">You can log up to {money(project.loggable)}. It counts only after the owner confirms it.</p>
+      <p className="text-xs text-slate-500">You can log up to {money(project.loggable)}. It counts only after the person being paid confirms it.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Amount (₹)">
           <input className={inputClass} type="number" min="1" step="0.01" max={project.loggable} required value={form.amount} onChange={set('amount')} />
@@ -308,11 +314,12 @@ function LogPaymentForm({ project, onDone }) {
       <Field label="Note">
         <input className={inputClass} value={form.note} onChange={set('note')} />
       </Field>
+      <LinksEditor links={links} onChange={setLinks} />
       <Field label="Proof (optional, image or PDF up to 5 MB)">
         <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setFile(e.target.files[0] ?? null)} />
       </Field>
       <ErrorText>{error}</ErrorText>
-      <Button disabled={busy}>{busy ? 'Logging…' : 'Log payment'}</Button>
+      <Button disabled={busy || !linksValid(links)}>{busy ? 'Logging…' : 'Log payment'}</Button>
     </form>
   )
 }
@@ -342,7 +349,7 @@ function BudgetModal({ current, onClose, onSubmit }) {
         <Field label={`New budget (current ${money(current)})`}>
           <input className={inputClass} type="number" step="0.01" value={newBudget} onChange={(e) => setNewBudget(e.target.value)} />
         </Field>
-        <Field label="Note for the client">
+        <Field label="Note for the payer">
           <input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
       </div>
@@ -360,7 +367,7 @@ function ChangeBanner({ change, mine, otherParty, onApprove, onReject, onCancel 
   return (
     <div className="mt-2 space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm">
       <p className="font-medium">
-        {mine ? 'You requested' : `${otherParty === 'the client' ? 'The client' : 'The owner'} requested`}{' '}
+        {mine ? 'You requested' : `${otherParty} requested`}{' '}
         {change.kind === 'delete'
           ? 'to delete this payment'
           : `to change it: ${money(prev.amount)} → ${money(next.amount)}, paid ${dateLabel(next.paid_on)}`}
@@ -381,7 +388,8 @@ function ChangeBanner({ change, mine, otherParty, onApprove, onReject, onCancel 
   )
 }
 
-function PaymentFormModal({ title, note, payment, max, withReason, submitLabel, onClose, onSubmit }) {
+function PaymentFormModal({ title, note, payment, max, withReason, withLinks, submitLabel, onClose, onSubmit }) {
+  const [links, setLinks] = useState((payment.links ?? []).map((l) => ({ label: l.label ?? '', url: l.url })))
   const [form, setForm] = useState({
     amount: payment.amount,
     paid_on: payment.paid_on,
@@ -392,7 +400,9 @@ function PaymentFormModal({ title, note, payment, max, withReason, submitLabel, 
   })
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
   const { reason, ...fields } = form
-  const invalid = !(Number(form.amount) > 0) || !form.paid_on || (withReason && !reason.trim())
+  const invalid =
+    !(Number(form.amount) > 0) || !form.paid_on || (withReason && !reason.trim()) || (withLinks && !linksValid(links))
+  const payload = withLinks ? { ...fields, links: cleanLinks(links) } : fields
   return (
     <Modal title={title} onClose={onClose}>
       {note && <p className="mb-3 text-sm text-slate-600">{note}</p>}
@@ -414,6 +424,7 @@ function PaymentFormModal({ title, note, payment, max, withReason, submitLabel, 
         <Field label="Note">
           <input className={inputClass} value={form.note} onChange={set('note')} />
         </Field>
+        {withLinks && <LinksEditor links={links} onChange={setLinks} />}
         {withReason && (
           <Field label="Reason for the change">
             <input className={inputClass} value={form.reason} onChange={set('reason')} />
@@ -422,7 +433,7 @@ function PaymentFormModal({ title, note, payment, max, withReason, submitLabel, 
       </div>
       <div className="mt-3 flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button disabled={invalid} onClick={() => onSubmit(withReason ? { ...fields, reason: reason.trim() } : fields)}>
+        <Button disabled={invalid} onClick={() => onSubmit(withReason ? { ...payload, reason: reason.trim() } : payload)}>
           {submitLabel}
         </Button>
       </div>

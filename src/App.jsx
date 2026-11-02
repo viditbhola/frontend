@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import ProjectDetail from './pages/ProjectDetail'
 import Projects from './pages/Projects'
+import Requests from './pages/Requests'
 
 export default function App() {
   const { session, profile, loading, waking } = useAuth()
@@ -27,6 +28,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="projects/:id" element={<ProjectDetail />} />
+        <Route path="requests" element={<Requests />} />
         {isOwner && <Route path="projects" element={<Projects />} />}
         {isOwner && <Route path="clients" element={<Clients />} />}
         <Route path="*" element={<Navigate to="/" replace />} />

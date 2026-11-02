@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import ProjectTable from '../components/ProjectTable'
 import { useApi } from '../components/useApi'
 import { Button, ErrorText, Field, inputClass } from '../components/ui'
+import { LinksEditor, cleanLinks, linksValid } from '../components/Links'
 
 const EMPTY = { client_id: '', title: '', description: '', budget: '' }
 
@@ -10,6 +11,7 @@ export default function Projects() {
   const projects = useApi('/projects')
   const clients = useApi('/clients')
   const [form, setForm] = useState(EMPTY)
+  const [links, setLinks] = useState([])
   const [formError, setFormError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
@@ -19,8 +21,9 @@ export default function Projects() {
     setBusy(true)
     setFormError('')
     try {
-      await api('/projects', { method: 'POST', body: { ...form, budget: form.budget } })
+      await api('/projects', { method: 'POST', body: { ...form, links: cleanLinks(links) } })
       setForm(EMPTY)
+      setLinks([])
       await projects.reload()
     } catch (err) {
       setFormError(err.message)
@@ -57,8 +60,9 @@ export default function Projects() {
         <Field label="Agreed budget (₹)">
           <input className={inputClass} type="number" min="1" step="0.01" required value={form.budget} onChange={set('budget')} />
         </Field>
+        <LinksEditor links={links} onChange={setLinks} />
         <ErrorText>{formError}</ErrorText>
-        <Button disabled={busy}>{busy ? 'Creating…' : 'Create project'}</Button>
+        <Button disabled={busy || !linksValid(links)}>{busy ? 'Creating…' : 'Create project'}</Button>
       </form>
     </div>
   )

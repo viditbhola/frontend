@@ -70,9 +70,16 @@ export default function Dashboard() {
       )}
 
       <section>
-        <h2 className="mb-2 font-semibold">{isOwner ? 'All projects' : 'Your projects'}</h2>
+        <h2 className="mb-2 font-semibold">{isOwner ? 'Projects you are paid for' : 'Your projects'}</h2>
         <ProjectTable projects={data.projects} showClient={isOwner} />
       </section>
+
+      {data.paying.length > 0 && (
+        <section>
+          <h2 className="mb-2 font-semibold">Projects you pay for</h2>
+          <ProjectTable projects={data.paying} showClient />
+        </section>
+      )}
     </div>
   )
 }

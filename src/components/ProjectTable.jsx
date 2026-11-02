@@ -31,7 +31,11 @@ export default function ProjectTable({ projects, showClient }) {
                 {money(p.confirmed)} / {money(p.budget)}
               </span>
             </div>
-            {showClient && <p className="text-xs text-slate-500">Client: {p.client_name}</p>}
+            {showClient && (
+              <p className="text-xs text-slate-500">
+                {p.my_side === 'payer' ? `You pay: ${p.owner_name}` : `Client: ${p.client_name}`}
+              </p>
+            )}
             <ProgressBar confirmed={p.confirmed} pending={p.pending} budget={p.budget} />
           </Link>
         </li>
