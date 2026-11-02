@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import ProjectTable from '../components/ProjectTable'
 import { useApi } from '../components/useApi'
@@ -13,6 +14,15 @@ export default function Dashboard() {
   if (error) return <ErrorText>{error}</ErrorText>
 
   const needsAction = data.projects.filter((p) => p.pending_count > 0 || p.pending_changes > 0)
+  // Active projects that still owe money, biggest balance first (owners only; `projects` is the payee side).
+  const owed = isOwner
+    ? data.projects
+        .filter((p) => p.status === 'active')
+        .map((p) => ({ ...p, due: Number(p.budget) - Number(p.confirmed) }))
+        .filter((p) => p.due > 0)
+        .sort((a, b) => b.due - a.due)
+    : []
+  const totalDue = owed.reduce((sum, p) => sum + p.due, 0)
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-3">
@@ -38,6 +48,35 @@ export default function Dashboard() {
         <section>
           <h2 className="mb-2 font-semibold">Needs your action</h2>
           <ProjectTable projects={needsAction} showClient />
+        </section>
+      )}
+
+      {isOwner && (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="font-semibold">Need to be paid</h2>
+            <span className="text-sm font-semibold text-amber-700">{money(totalDue)} due</span>
+          </div>
+          {owed.length === 0 ? (
+            <p className="text-sm text-slate-500">Nobody owes you anything right now.</p>
+          ) : (
+            <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+              {owed.map((p) => (
+                <li key={p.id}>
+                  <Link to={`/projects/${p.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 p-4 hover:bg-slate-50">
+                    <div>
+                      <p className="font-medium">{p.title}</p>
+                      <p className="text-xs text-slate-500">
+                        Client: {p.client_name} · {money(p.confirmed)} of {money(p.budget)} received
+                      </p>
+                    </div>
+                    <span className="ml-auto font-semibold text-amber-700">{money(p.due)}</span>
+                    <span className="text-sm text-indigo-600">Record payment →</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 

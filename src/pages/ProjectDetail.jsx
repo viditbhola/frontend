@@ -141,6 +141,7 @@ export default function ProjectDetail() {
       )}
 
       {!completed && !isPayee && <LogPaymentForm project={project} onDone={reload} />}
+      {!completed && isPayee && <LogPaymentForm mode="payee" project={project} onDone={reload} />}
 
       <section>
         <h2 className="mb-2 font-semibold">Payments</h2>
@@ -155,6 +156,7 @@ export default function ProjectDetail() {
                   {money(p.amount)}
                 </span>
                 <StatusBadge status={p.status} />
+                {p.created_by === project.owner_id && <span className="text-xs text-slate-500">recorded by owner</span>}
                 <span className="text-sm text-slate-500">
                   paid {dateLabel(p.paid_on)}{p.method && ` via ${p.method}`}{p.reference && ` · ref ${p.reference}`}
                 </span>
@@ -304,7 +306,10 @@ export default function ProjectDetail() {
   )
 }
 
-function LogPaymentForm({ project, onDone }) {
+// mode 'payer': the payer logs a payment (pending until the payee confirms).
+// mode 'payee': the owner records money received; it is confirmed at once and can be disputed.
+function LogPaymentForm({ project, onDone, mode = 'payer' }) {
+  const received = mode === 'payee'
   const empty = { amount: '', paid_on: today(), method: '', reference: '', note: '' }
   const [form, setForm] = useState(empty)
   const [links, setLinks] = useState([])
@@ -316,7 +321,9 @@ function LogPaymentForm({ project, onDone }) {
   if (Number(project.loggable) <= 0) {
     return (
       <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-600">
-        Payments are not open: everything is already logged. If the budget is increased and you accept, you can log more.
+        {received
+          ? 'No room left: everything is already recorded or waiting for your confirmation below.'
+          : 'Payments are not open: everything is already logged. If the budget is increased and you accept, you can log more.'}
       </p>
     )
   }
@@ -326,8 +333,11 @@ function LogPaymentForm({ project, onDone }) {
     setBusy(true)
     setError('')
     try {
-      const payment = await api(`/projects/${project.id}/payments`, { method: 'POST', body: { ...form, links: cleanLinks(links) } })
-      if (file) {
+      const payment = await api(
+        received ? `/projects/${project.id}/received-payments` : `/projects/${project.id}/payments`,
+        { method: 'POST', body: { ...form, links: cleanLinks(links) } },
+      )
+      if (file && !received) {
         const upload = new FormData()
         upload.append('file', file)
         await api(`/payments/${payment.id}/proof`, { method: 'POST', form: upload })
@@ -346,8 +356,12 @@ function LogPaymentForm({ project, onDone }) {
 
   return (
     <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="font-semibold">Log a payment</h2>
-      <p className="text-xs text-slate-500">You can log up to {money(project.loggable)}. It counts only after the person being paid confirms it.</p>
+      <h2 className="font-semibold">{received ? 'Record a payment you received' : 'Log a payment'}</h2>
+      <p className="text-xs text-slate-500">You can {received ? 'record' : 'log'} up to {money(project.loggable)}.{' '}
+        {received
+          ? 'It counts immediately and is marked as recorded by you; the client can ask to have it changed or removed.'
+          : 'It counts only after the person being paid confirms it.'}
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Amount (₹)">
           <input className={inputClass} type="number" min="1" step="0.01" max={project.loggable} required value={form.amount} onChange={set('amount')} />
@@ -366,11 +380,13 @@ function LogPaymentForm({ project, onDone }) {
         <input className={inputClass} value={form.note} onChange={set('note')} />
       </Field>
       <LinksEditor links={links} onChange={setLinks} />
-      <Field label="Proof (optional, image or PDF up to 5 MB)">
-        <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setFile(e.target.files[0] ?? null)} />
-      </Field>
+      {!received && (
+        <Field label="Proof (optional, image or PDF up to 5 MB)">
+          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(e) => setFile(e.target.files[0] ?? null)} />
+        </Field>
+      )}
       <ErrorText>{error}</ErrorText>
-      <Button disabled={busy || !linksValid(links)}>{busy ? 'Logging…' : 'Log payment'}</Button>
+      <Button disabled={busy || !linksValid(links)}>{busy ? 'Saving…' : received ? 'Record payment' : 'Log payment'}</Button>
     </form>
   )
 }
